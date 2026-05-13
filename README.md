@@ -1,4 +1,4 @@
-# agent-cli
+# naji（娜稽）
 
 **Append-only 社交 AI Agent CLI** — 基于 MCP 协议的轻量 QQ 群聊 AI 助手。
 
@@ -21,7 +21,7 @@ NapCatQQ (Docker)  ←  QQ 协议客户端，OneBot v11
     ↕ WebSocket + HTTP
 Amadeus-QQ-MCP (uv)  ←  MCP 桥接，消息缓冲
     ↕ Streamable HTTP 或 stdio
-agent-cli (tsx)  ←  社交 Agent 引擎
+naji (tsx)  ←  社交 Agent 引擎
     ↕ HTTPS
 LLM API (OpenCode Go / DeepSeek / OpenAI)
 ```
@@ -37,8 +37,8 @@ LLM API (OpenCode Go / DeepSeek / OpenAI)
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/你的用户名/agent-cli.git
-cd agent-cli
+git clone https://github.com/huaruoji/naji.git
+cd naji
 npm install
 ```
 
@@ -78,18 +78,16 @@ uv run qq-agent-mcp --qq 你的QQ号 --transport streamable-http --host 127.0.0.
 ### 6. 启动 Agent
 
 ```bash
-cd ~/projects/agent-cli
+cd ~/projects/naji
 npx tsx src/index.ts start
 ```
-
-看到 `MCP self-check passed: QQ=... 昵称=... 状态=online` 就代表启动成功。
 
 ## 命令
 
 | 命令 | 说明 |
 |------|------|
 | `npm start -- init` | 初始化 `social/` 目录 |
-| `npm start -- start` | 启动 Agent（连续模式） |
+| `npm start -- start` | 启动 naji（连续模式） |
 | `npm start -- start --mock --once` | 测试模式（单次评估后退出） |
 | `npm run test-llm` | 测试 LLM API 连通性 |
 | `npm run test` | 运行单元测试 |

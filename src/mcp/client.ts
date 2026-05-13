@@ -57,7 +57,7 @@ export class McpClient {
       });
     }
 
-    const client = new Client({ name: 'agent-cli', version: '0.1.0' });
+    const client = new Client({ name: 'naji', version: '0.1.0' });
     await client.connect(this.transport as never);
     this.client = client;
     await this.refreshTools();

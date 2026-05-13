@@ -102,6 +102,9 @@ export class SocialAgent {
   private hydratedTargets = new Set<string>();
   private readonly RECENT_RAW_LIMIT = 30;
   private readonly HYDRATE_LIMIT = 100;
+  private readonly HEALTH_CHECK_INTERVAL_MS = 30_000;
+  private healthCheckTimer: ReturnType<typeof setTimeout> | null = null;
+  private napcatOnline = true;
 
   constructor(config: AgentConfig, logger?: AgentLogger) {
     this.config = config;
@@ -163,6 +166,7 @@ export class SocialAgent {
     // 启动轮询
     this.logger.info(`Agent started. Polling every ${this.config.pollIntervalMs}ms`);
     this.schedulePoll();
+    this.scheduleHealthCheck();
   }
 
   /** 停止 */
@@ -171,6 +175,10 @@ export class SocialAgent {
     if (this.pollTimer) {
       clearTimeout(this.pollTimer);
       this.pollTimer = null;
+    }
+    if (this.healthCheckTimer) {
+      clearTimeout(this.healthCheckTimer);
+      this.healthCheckTimer = null;
     }
     // 清除所有防抖计时器
     for (const [id, timer] of this.debounceTimers) {
@@ -215,6 +223,52 @@ export class SocialAgent {
       }
     } catch (err) {
       this.logger.warn(`MCP self-check failed: ${err}`);
+    }
+  }
+
+  private scheduleHealthCheck(): void {
+    if (!this.running) return;
+    this.healthCheckTimer = setTimeout(async () => {
+      if (!this.running) return;
+      try {
+        await this.runNapcatHealthCheck();
+      } catch (err) {
+        this.logger.warn(`Health check error: ${err}`);
+      }
+      this.scheduleHealthCheck();
+    }, this.HEALTH_CHECK_INTERVAL_MS);
+  }
+
+  private async runNapcatHealthCheck(): Promise<void> {
+    if (!this.mcp?.isConnected) return;
+    try {
+      const result = await this.mcp.callTool('check_status', {});
+      const text = result.content.map(c => c.text || '').join('\n').trim();
+      if (!text) return;
+      const parsed = JSON.parse(text) as { online_status?: string };
+      const online = parsed.online_status === 'online';
+
+      if (!online && this.napcatOnline) {
+        this.logger.warn('⚠️ NapCat offline, restarting container...');
+        this.napcatOnline = false;
+        const { execSync } = await import('node:child_process');
+        execSync('docker restart napcat', { stdio: 'pipe' });
+        this.logger.info('🔄 docker restart napcat sent');
+      } else if (online && !this.napcatOnline) {
+        this.logger.info('✅ NapCat back online');
+        this.napcatOnline = true;
+      }
+    } catch (err) {
+      if (this.napcatOnline) {
+        this.logger.warn(`⚠️ Health check failed, NapCat may be offline: ${err}`);
+        this.napcatOnline = false;
+        try {
+          const { execSync } = await import('node:child_process');
+          execSync('docker restart napcat', { stdio: 'pipe' });
+          this.logger.info('🔄 docker restart napcat sent');
+          await new Promise(r => setTimeout(r, 5000));
+        } catch {}
+      }
     }
   }
 

@@ -1,7 +1,7 @@
 {
-  "name": "agent-cli",
+  "name": "naji",
   "version": "0.1.0",
-  "description": "CLI social agent with append-only prompt caching and MCP integration",
+  "description": "Append-only 社交 AI Agent CLI",
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
