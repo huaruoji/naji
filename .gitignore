@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+*.log
+
+# 个人社交数据（含 QQ 号、聊天记录等）
+social/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -1,0 +1,29 @@
+{
+  "name": "agent-cli",
+  "version": "0.1.0",
+  "description": "CLI social agent with append-only prompt caching and MCP integration",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test-llm": "tsx src/index.ts test-llm",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.11.1",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "zod": "^3.24.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.1",
+    "typescript": "^5.8.3",
+    "tsx": "^4.19.3",
+    "vitest": "^3.1.1"
+  }
+}
