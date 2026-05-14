@@ -7,7 +7,9 @@
 ## 特性
 
 - **Append-only 对话** — 系统 prompt 永远不变，只追加新消息。最大化 LLM prompt prefix 缓存命中率（实测 65%-96%）。
-- **decide 强制决策** — 每次 eval 必须以 `decide("reply")` 或 `decide("silent")` 结束。不再出现"忘记调 send_message"。
+- **reply() / silent() 强制决策** — 每次 eval 必须以 `reply(content)` 或 `silent()` 结束。`reply` 直接发言，`silent` 选择沉默。不再有"忘记调 send_message"。
+- **回复义务协议** — 私聊、群聊 @、以及紧跟你发言的追问被归类为 `must_reply`，`silent()` 在这些场景下会被拒绝，逼 LLM 必须 `reply()`。
+- **两阶段执行器** — 工具循环分为 `gather`（读信息）和 `decide`（做决策）两个阶段，防止 LLM 在没读完信息前就提前提交最终决策。
 - **防抖评估** — 3 秒窗口合并多条消息后再评估，避免机器人喋喋不休。
 - **每 target 独立上下文** — 每个群聊和私聊有各自的对话历史，互不干扰。
 - **安全令牌** — 会话级随机分隔符包裹每条消息，防止 prompt 注入。
@@ -98,8 +100,21 @@ npx tsx src/index.ts start
 ### Append-Only 对话
 系统 prompt 在 Agent 整个生命周期内只生成一次，之后只追加新消息。这使得 LLM provider 的 prompt prefix 缓存命中率达到 65%-96%（实测首轮全价，后续仅付增量 token 费用）。
 
-### decide 强制决策
-每轮评估结束时 LLM 必须调用 `decide()` 做出明确决策，系统自动执行回复发送。替代了 PetGPT 的 Intent/Reply/Observer 三层分离设计，大幅简化架构。
+### reply / silent 强制决策
+每轮评估结束时 LLM 必须在 `reply(content)` 和 `silent()` 之间二选一。`reply` 的 content 就是实际发送的聊天内容，而非参数填写——这消除了"填表单"式的认知负担。系统自动执行发送。
+替代了 PetGPT 的 Intent/Reply/Observer 三层分离设计。
+
+### 回复义务协议
+不是所有消息都可以沉默。系统将场景分为两种：
+- **must_reply**（私聊、@你、紧跟你发言的追问）→ `silent()` 被代码层拒绝，LLM 必须调用 `reply()`
+- **may_silent**（普通群聊闲聊）→ LLM 自主选择 `reply()` 或 `silent()`
+
+### 两阶段执行器
+执行器被重构为显式状态机：
+1. **gather 阶段** — 只允许读/写/编辑等信息工具
+2. **decide 阶段** — 只允许 `reply()` 或 `silent()`
+
+这从结构上消除了"还没读结果就提前提交 silent/reply"的 bug。
 
 ### 防抖评估
 群聊消息天然有突发性（连续 3-5 条后等待回复）。3 秒防抖窗口合并一次评估，避免：

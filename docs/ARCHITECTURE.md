@@ -5,21 +5,27 @@
 Unlike traditional approaches that rebuild the system prompt every evaluation cycle, agent-cli **appends** new messages to an ever-growing conversation. The system prompt (agent.md + tool definitions) is generated **once per agent lifecycle** and never changes.
 
 ```
-┌─────────────────────────────────────────────┐
-│  System Prompt (stable, cached)             │
-│  ├── agent.md (personality, rules)          │
-│  ├── Message format (with security tokens)  │
-│  ├── Owner identification                   │
-│  ├── Filesystem explanation                 │
-│  └── Tool descriptions + behavior rules     │
-├─────────────────────────────────────────────┤
-│  Conversation (appended, grows)             │
-│  ├── [user] 当前评估目标: 群 699242647       │
-│  ├── [user] «abc»张三(123)«/def» ‹ghi›你好‹/jkl› │
-│  ├── [assistant] social_read("owner.md")    │
-│  ├── [user] ...                             │
-│  └── ...                                    │
-└─────────────────────────────────────────────┘
+┌────────────────────────────────────────────────┐
+│  System Prompt (stable, cached)                │
+│  ├── agent.md (personality, style)             │
+│  ├── Decision rules (priority levels)          │
+│  ├── Message format (with security tokens)     │
+│  ├── Decision tools: reply() / silent()        │
+│  ├── Filesystem explanation + file tools       │
+│  └── File maintenance rules                    │
+├────────────────────────────────────────────────┤
+│  Conversation (appended, grows)                │
+│  ├── user: «abc»张三(123)«/def» ‹ghi›你好‹/jkl›  │
+│  ├── assistant: 在的喵～                        │
+│  ├── user: ...                                 │
+│  └── ...                                       │
+├────────────────────────────────────────────────┤
+│  Transient Context (per eval, not persisted)   │
+│  ├── [时间 + target]                            │
+│  ├── [当前待处理消息]                             │
+│  ├── buffer messages...                        │
+│  └── [强制回复场景] / @提醒                      │
+└────────────────────────────────────────────────┘
          ↓                                   ↓
     LLM sees everything        Cache hits on prefix
 ```
@@ -34,30 +40,58 @@ When token count exceeds 85% of `maxContextTokens`, the conversation is reset:
 3. Current state files (owner.md, group rules, contacts, people profiles) are loaded as a fresh user message
 4. Evaluation continues with the new context
 
-## Forced Decision: `decide` Tool
+## Decision Tools: `reply()` / `silent()`
 
-Inspired by PetGPT's Intent/Reply separation but simplified into a single forced decision tool.
+Instead of PetGPT's Intent/Observer/Reply three-layer design, agent-cli provides two decision tools:
 
 ```
-Every eval MUST end with:
+Every eval MUST end with one of:
 
-  decide({ action: "reply", content: "...", reply_to: "12345" })
-  → System auto-sends via MCP send_message
+  reply(content, reply_to?)
+  → content is the actual message to send.
+    reply_to is optional (message ID to quote).
+    System auto-sends via MCP send_message.
 
   OR
 
-  decide({ action: "silent" })
-  → No message sent
+  silent()
+  → No message sent.
 
-If LLM forgets to call decide():
+If LLM forgets to call reply() or silent():
   → Error message injected into conversation
   → LLM retries with a valid decision
 ```
 
-Benefits over PetGPT's approach:
-- No separate Intent/Reply/Observer layers with different LLM configs
-- No `write_intent_plan` / `reply_brief.md` file handoff
-- LLM decides in one place, system handles execution
+Key difference from `decide()`: `reply()` and `silent()` are separate tools. The LLM calls `reply("content")` directly — it's speaking, not filling a parameter form.
+
+## Reply Policy
+
+Not all messages are optional. The system classifies every evaluation into a **reply policy**:
+
+| Policy | Scenarios | Behavior |
+|--------|-----------|----------|
+| **must_reply** | Private chat, @-mentions, follow-up questions after bot's last message | `silent()` returns an error; LLM must call `reply()` |
+| **may_silent** | Ordinary group chat, nobody asking the bot | LLM may choose `reply()` or `silent()` |
+
+The policy is enforced at two levels:
+1. **Transient prompt**: `[强制回复场景]` injected into LLM context
+2. **Tool handler**: `silent()` returns `[Error]` when `must_reply` is active
+
+## Two-Phase Executor
+
+The tool execution loop (`toolExecutor.ts`) is a state machine with two phases:
+
+### Phase 1: gather
+- Available tools: all MCP tools (`social_read`, `social_list`, `social_edit`, etc.)
+- Decision tools (`reply`, `silent`) are **not available**
+- LLM reads files, checks context, edits notes
+
+### Phase 2: decide
+- Available tools: only `reply()` and `silent()`
+- Gathering tools are **not available**
+- LLM must make a final decision based on what it read
+
+This prevents a common bug where the LLM submits `social_read() + silent()` in the same turn — effectively deciding before seeing the read results.
 
 ## Debounced Evaluation
 
@@ -124,11 +158,20 @@ agent-cli poll (batch_get_recent_context)  ← every 5s
                             evaluate(target)
                                     ↓
                     conv = getConversation(target)
-                    conv.append(new_messages)
+                    classifyReplyPolicy → must_reply or may_silent
                                     ↓
-                    LLM evaluates → social_read/social_edit/md_organize
+                    ┌─── gather phase ───┐
+                    │  social_read /     │
+                    │  social_edit /     │
+                    │  social_list       │
+                    └────────────────────┘
                                     ↓
-                    decide("reply") or decide("silent")
+                    ┌─── decide phase ───┐
+                    │  reply(content)    │
+                    │  or silent()       │
+                    └────────────────────┘
+                                    ↓
+                    conv.append(buffer + reply)
 ```
 
 ## Comparison with PetGPT
@@ -138,7 +181,9 @@ agent-cli poll (batch_get_recent_context)  ← every 5s
 | Architecture | 3 layers (Intent/Observer/Reply) + Fetcher | **Single agent** + Fetcher |
 | System prompt | Rebuilt every eval (10+ file reads) | **Append-only** (stable prefix) |
 | Context | `get_situation` tool | Direct conversation history |
-| Decision | `write_intent_plan` → Reply consumes | `decide()` tool |
+| Decision | `write_intent_plan` → Reply consumes | `reply()` / `silent()` tools |
+| Reply policy | None (intent decides) | **must_reply / may_silent** with code enforcement |
+| Executor | Single loop | **Gather/Decide two-phase state machine** |
 | File updates | Observer (separate LLM) | Agent self-edits |
 | Prompt cache | Low (tokens change per eval) | **High** (stable prefix) |
 | Reset | N/A (rebuilds every eval) | Summary + reload at 85% |

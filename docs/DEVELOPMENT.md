@@ -4,7 +4,7 @@
 
 ```bash
 npm run typecheck    # TypeScript type checking (0 errors)
-npm test            # 40 unit tests (vitest)
+npm test            # 48 unit tests (vitest)
 npm run test-llm    # Test LLM API connectivity
 npm start -- build  # Compile TypeScript to dist/
 ```
@@ -13,6 +13,8 @@ All tests are in `src/__tests__/`:
 - `conversation.test.ts` — ConversationManager (10 tests)
 - `llm.test.ts` — OpenAI adapter + LLM module (18 tests)
 - `workspace.test.ts` — Workspace file system (12 tests)
+- `toolExecutor.test.ts` — Tool executor phases and decision handling (3 tests)
+- `agent-policy.test.ts` — Reply policy classification and enforcement (5 tests)
 
 ## Code Map
 
@@ -24,7 +26,7 @@ src/
 ├── env.ts                # .env file loader (zero dependencies)
 ├── workspace.ts          # File system operations (replaces Tauri)
 ├── conversation.ts       # Append-only conversation manager
-├── agent.ts              # SocialAgent class (~580 lines core)
+├── agent.ts              # SocialAgent class (~900 lines core)
 ├── llm/
 │   ├── index.ts          # LLM API call wrapper (fetch)
 │   └── openaiAdapter.ts  # OpenAI-compatible message/tool formatting
@@ -34,6 +36,21 @@ src/
 ```
 
 ## Change History
+
+### 2026-05-14 — Reply policy, two-phase executor, and stability fixes
+
+- **`decide()` → `reply()` / `silent()`**: Split single decide tool into two separate tools. LLM calls `reply(content)` to speak directly, `silent()` to stay quiet.
+- **Reply policy**: `must_reply` / `may_silent` classification with code enforcement. Private chat and @-mentions cannot be silenced.
+- **Two-phase executor**: Tool loop split into `gather` (read/edit) and `decide` (reply/silent) phases. Prevents "pre-commit silent before reading results".
+- **Self-message filtering**: Bot's own replies no longer enter the message buffer (they're already in conversation as assistant messages).
+- **Eval scaffolding as transient context**: Time/target headers and @-mention reminders no longer persist in conversation history.
+- **Failed decision detection**: `stopAfterTool` checks `result.startsWith('[OK]')`. Failed `silent()/reply()` don't end the eval.
+- **Single-round `social_read` cache**: Same path not re-read within the same eval.
+- **Observability**: Buffer preview, reply policy reason, and reply-to mapping now printed in eval logs.
+- **Health check**: No longer runs `docker restart napcat`; only logs warnings.
+- **Mock MCP**: Added `check_status`, private message fixtures, and correct `batch_get_recent_context` response format.
+- **48 unit tests** (up from 40): Added `agent-policy.test.ts` (5 tests) and `toolExecutor.test.ts` (3 tests).
+- **Dead code removed**: `guessTargetType()`, `bufferHasContent`, `getApiUrl()`, `parseResponse` import.
 
 ### 2026-05-13 — Initial implementation
 
@@ -60,8 +77,9 @@ src/
 1. **Amadeus WebSocket reliability**: WebSocket connection to NapCat sometimes disconnects after MCP server initialization. Fallback to OneBot HTTP is in place but `get_friend_msg_history` is not supported by NapCat.
 2. **Private message polling**: Friend messages can only be received via WebSocket (NapCat doesn't support `get_friend_msg_history`). If WebSocket drops, private messages are missed until reconnection.
 3. **Single-threaded eval**: All targets share the same event loop. A slow LLM call for one target delays others.
-4. **No rate limiting for `send_message`**: If the LLM calls `decide("reply")` rapidly, multiple messages are sent without throttling.
+4. **Mock lacks streaming messages**: Mock MCP is useful for protocol testing but doesn't simulate incremental message arrival. A scripted message feed would enable stronger end-to-end testing.
 5. **agent.md optimization**: The personality file is loaded once at startup. Hot-reload would be useful for iterative prompt engineering.
+6. **Reply semantic verification**: The system enforces that a reply must happen in `must_reply` scenarios, but does not verify that the reply content actually addresses the current message (e.g., "讲个笑话" should not get "你还在吗"). This remains an LLM-level challenge.
 
 ## Design Rationale
 
