@@ -50,6 +50,10 @@ const MOCK_MESSAGES: Record<string, Array<Record<string, unknown>>> = {
     { message_id: '19', sender_id: 2532452182, sender_name: '兼职派肉骨鸡', content: '@me 你太费钱了喵，我要不要自己把你改造成省钱的版本', timestamp: new Date(Date.now() - 120000).toISOString() },
     { message_id: '20', sender_id: 2532452182, sender_name: '兼职派肉骨鸡', content: '@me 回复一下', timestamp: new Date(Date.now() - 60000).toISOString() },
   ],
+  '2532452182': [
+    { message_id: '101', sender_id: 2532452182, sender_name: '兼职派肉骨鸡', content: '你对2716599708的记忆是什么？', timestamp: new Date(Date.now() - 120000).toISOString() },
+    { message_id: '102', sender_id: 2532452182, sender_name: '兼职派肉骨鸡', content: '讲个笑话', timestamp: new Date(Date.now() - 30000).toISOString() },
+  ],
 };
 
 // ============ MCP Server Loop ============
@@ -144,6 +148,11 @@ function handleRequest(msg: JsonRpcMessage): void {
             description: '获取当前登录信息',
             inputSchema: { type: 'object', properties: {} },
           },
+          {
+            name: 'check_status',
+            description: '检查 NapCat / QQ 在线状态',
+            inputSchema: { type: 'object', properties: {} },
+          },
         ],
       });
       break;
@@ -179,15 +188,14 @@ function handleRequest(msg: JsonRpcMessage): void {
         }
 
         case 'batch_get_recent_context': {
-          const result: Record<string, { messages: Array<Record<string, unknown>> }> = {};
-          for (const g of MOCK_GROUPS) {
-            const gid = String(g.group_id);
-            if (MOCK_MESSAGES[gid]) {
-              result[gid] = { messages: MOCK_MESSAGES[gid].slice(-10) };
-            }
-          }
+          const targets = (toolArgs.targets as Array<{ target: string; target_type: 'group' | 'private' }> | undefined) || [];
+          const results = targets.map(t => ({
+            target: t.target,
+            target_type: t.target_type,
+            messages: (MOCK_MESSAGES[String(t.target)] || []).slice(-10),
+          }));
           sendResponse(id, {
-            content: [{ type: 'text', text: JSON.stringify(result) }],
+            content: [{ type: 'text', text: JSON.stringify({ results }) }],
           });
           break;
         }
@@ -195,6 +203,12 @@ function handleRequest(msg: JsonRpcMessage): void {
         case 'get_login_info':
           sendResponse(id, {
             content: [{ type: 'text', text: JSON.stringify({ user_id: 123456789, nickname: 'MockBot' }) }],
+          });
+          break;
+
+        case 'check_status':
+          sendResponse(id, {
+            content: [{ type: 'text', text: JSON.stringify({ napcat_running: true, qq_logged_in: true, qq_account: '123456789', qq_nickname: 'MockBot', online_status: 'online' }) }],
           });
           break;
 

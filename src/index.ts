@@ -64,21 +64,19 @@ program
       }
     }
 
-    if (opts.once) {
-      config.pollIntervalMs = 0; // No polling, just one eval
-    }
-
     const agent = new SocialAgent(config);
     await agent.start();
 
     if (opts.once) {
-      // 单次 eval 后退出（给足工具循环时间）
-      console.log(chalk.cyan('\n⏳ Single eval mode, waiting for completion...'));
-      setTimeout(async () => {
-        console.log(chalk.gray('\n--once: timeout reached, exiting'));
-        await agent.stop();
-        process.exit(0);
-      }, 40000);
+      // 单次 poll + eval 后退出
+      console.log(chalk.cyan('\n⏳ Single eval mode, polling once...'));
+      await agent.pollOnce();
+      // 等防抖 + LLM 调用完成
+      console.log(chalk.gray('  Waiting for debounce + eval...'));
+      await new Promise(r => setTimeout(r, 35000));
+      console.log(chalk.gray('\n--once: done, exiting'));
+      await agent.stop();
+      process.exit(0);
       return;
     }
 

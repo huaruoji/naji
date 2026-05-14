@@ -2,7 +2,7 @@
  * OpenAI 兼容适配器
  * 复用 PetGPT 的 openaiCompatible.js 核心逻辑，移植为 TypeScript
  */
-import type { Message, ToolCall, LlmResponse, AdapterCapabilities, ApiFormat, ToolDefinition } from '../types.js';
+import type { Message, ToolCall, LlmResponse, AdapterCapabilities, ToolDefinition } from '../types.js';
 
 export const capabilities: AdapterCapabilities = {
   supportsImage: true,
@@ -10,26 +10,6 @@ export const capabilities: AdapterCapabilities = {
   supportsAudio: false,
   supportsPdf: false,
 };
-
-// Provider 默认 URL 映射
-const PROVIDER_URLS: Record<string, string> = {
-  openai: 'https://api.openai.com/v1',
-  gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
-  anthropic: 'https://api.anthropic.com/v1',
-  grok: 'https://api.x.ai/v1',
-};
-
-/** 获取完整的 API URL */
-function getApiUrl(apiFormat: ApiFormat, baseUrl?: string): string {
-  if (baseUrl && baseUrl !== 'default') {
-    let url = baseUrl;
-    if (!url.endsWith('/v1') && !url.endsWith('/v1/')) {
-      url = url.endsWith('/') ? url + 'v1' : url + '/v1';
-    }
-    return url;
-  }
-  return PROVIDER_URLS[apiFormat] || PROVIDER_URLS.openai;
-}
 
 /** 构建 OpenAI 格式的请求体 */
 export function buildOpenAIRequest(
