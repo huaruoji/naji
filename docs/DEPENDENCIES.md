@@ -6,6 +6,8 @@
 |-----------|------|-------------|
 | **NapCatQQ** (`mlikiowa/napcat-docker`) | QQ protocol client. Receives/sends messages via OneBot v11 API. | Docker container |
 | **Amadeus-QQ-MCP** | Python MCP server. Bridges NapCat's OneBot API to MCP protocol. Maintains message buffer. | Spawned by agent-cli via `uv run` |
+| **SearXNG** (optional) | Local privacy-respecting metasearch engine. Powers `web_search` tool. | Docker container (`searxng/searxng`) |
+| **Jina AI Reader** (optional) | Free web-to-Markdown API. Powers `web_fetch` tool as primary backend. | External API (`r.jina.ai`) |
 | **agent-cli** | TypeScript social agent engine. | Direct Node.js (`tsx`) |
 
 ## Reference Projects

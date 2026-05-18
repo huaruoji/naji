@@ -80,6 +80,15 @@ export interface AgentConfig {
   explicitPromptCache: boolean;
   /** 主人的 QQ 号（用于安全令牌识别） */
   ownerQQ?: string;
+  /** Optional local web search config */
+  webSearch?: WebSearchConfig;
+}
+
+export interface WebSearchConfig {
+  enabled?: boolean;
+  baseUrl?: string;
+  timeoutMs?: number;
+  maxResults?: number;
 }
 
 export interface McpServerConfig {

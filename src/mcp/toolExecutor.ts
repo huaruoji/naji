@@ -139,6 +139,21 @@ export async function executeWithTools(
     // 没有工具调用
     if (!toolCalls || toolCalls.length === 0) {
       if (phase === 'gather') {
+        // 如果还没调用过任何非决策工具，不要跳到 decide — 让模型先收集信息
+        const hasDoneRealWork = toolCallHistory.some(
+          t => t.name !== 'reply' && t.name !== 'silent'
+        );
+        if (!hasDoneRealWork) {
+          messages.push({ role: 'assistant', content: content || '' });
+          if (reasoningContent) {
+            messages[messages.length - 1].reasoning_content = reasoningContent;
+          }
+          messages.push({
+            role: 'user',
+            content: '[系统消息] 你还没有使用任何信息收集工具（如 web_search、social_read 等），请先用工具获取信息后再做决策。',
+          });
+          continue;
+        }
         messages.push({ role: 'assistant', content: content || '' });
         if (reasoningContent) {
           messages[messages.length - 1].reasoning_content = reasoningContent;

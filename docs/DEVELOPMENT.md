@@ -4,7 +4,7 @@
 
 ```bash
 npm run typecheck    # TypeScript type checking (0 errors)
-npm test            # 48 unit tests (vitest)
+npm test            # 50+ unit tests (vitest)
 npm run test-llm    # Test LLM API connectivity
 npm start -- build  # Compile TypeScript to dist/
 ```
@@ -14,7 +14,8 @@ All tests are in `src/__tests__/`:
 - `llm.test.ts` — OpenAI adapter + LLM module (18 tests)
 - `workspace.test.ts` — Workspace file system (12 tests)
 - `toolExecutor.test.ts` — Tool executor phases and decision handling (3 tests)
-- `agent-policy.test.ts` — Reply policy classification and enforcement (5 tests)
+- `agent-policy.test.ts` — Reply policy classification and enforcement, web_search/web_fetch tools (8 tests)
+- `agent-evaluate.test.ts` — Buffer retention on failed decisions, history ID stripping (2 tests)
 
 ## Code Map
 
@@ -26,7 +27,7 @@ src/
 ├── env.ts                # .env file loader (zero dependencies)
 ├── workspace.ts          # File system operations (replaces Tauri)
 ├── conversation.ts       # Append-only conversation manager
-├── agent.ts              # SocialAgent class (~900 lines core)
+├── agent.ts              # SocialAgent class (~1200 lines core)
 ├── llm/
 │   ├── index.ts          # LLM API call wrapper (fetch)
 │   └── openaiAdapter.ts  # OpenAI-compatible message/tool formatting
@@ -36,6 +37,19 @@ src/
 ```
 
 ## Change History
+
+### 2026-05-15 — Local web search, web_fetch, silent enforcement
+
+- **`web_search` built-in tool**: Queries local SearXNG via JSON API. Returns title/URL/snippet per result. Prompt updated: LLM must summarize results (users can't see raw output).
+- **`web_fetch` built-in tool**: Fetches a URL and returns clean Markdown. Primary: Jina AI Reader (`r.jina.ai`). Fallback: direct HTTP + HTML stripping.
+- **`silent` removed in `must_reply`**: `silent` tool is no longer registered in the tool map when `replyPolicy.kind === 'must_reply'`. Code-level enforcement prevents the LLM from even attempting it (was previously prompt-only).
+- **Conditional silent in system prompt**: Changed from "二选一" to describing `silent` as "(并非所有场景下都可用，以工具列表中是否包含为准)".
+- **Political sensitivity rule**: Added prompt rule for China-related sensitive topics — LLM must use indirect/neutral wording to avoid message blocking.
+- **Stale `reply_to` rejection**: `reply()` returns `[Error]` when `reply_to` doesn't match the current buffer's message IDs.
+- **Buffer retained on failed decision**: Messages are only cleared from buffer after a successful `reply()` or `silent()`. Failed decisions no longer drop messages.
+- **History ID stripping**: User messages persisted to conversation history no longer carry `[#ID]` prefixes, preventing the LLM from referencing stale IDs.
+- **SearXNG engine tuning**: Switched from all-default engines to `keep_only: [google, brave, bing, news, wikipedia, duckduckgo]` for reliable results.
+- **Test updates**: `agent-policy.test.ts` now 8 tests (was 5), added `web_search` formatting test, `web_fetch` fallback test, `silent` removal test.
 
 ### 2026-05-14 — Reply policy, two-phase executor, and stability fixes
 
@@ -80,6 +94,8 @@ src/
 4. **Mock lacks streaming messages**: Mock MCP is useful for protocol testing but doesn't simulate incremental message arrival. A scripted message feed would enable stronger end-to-end testing.
 5. **agent.md optimization**: The personality file is loaded once at startup. Hot-reload would be useful for iterative prompt engineering.
 6. **Reply semantic verification**: The system enforces that a reply must happen in `must_reply` scenarios, but does not verify that the reply content actually addresses the current message (e.g., "讲个笑话" should not get "你还在吗"). This remains an LLM-level challenge.
+7. **SearXNG engine availability**: Some search engines (Google, DuckDuckGo) may timeout from Docker containers depending on network environment. The current engine list is curated for reliability but may need adjustment.
+8. **`silent` in `may_silent` can waste tokens**: Even when `silent` is available, the model sometimes calls it then immediately switches to `reply`. This is harmless but wastes one LLM round trip.
 
 ## Design Rationale
 

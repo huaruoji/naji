@@ -16,6 +16,12 @@ export function defaultConfig(socialDir: string): AgentConfig {
     watchedFriends: (process.env.WATCHED_FRIENDS || '').split(',').filter(Boolean),
     explicitPromptCache: true,
     ownerQQ: process.env.OWNER_QQ || '',
+    webSearch: {
+      enabled: process.env.WEB_SEARCH_ENABLED === '1',
+      baseUrl: process.env.WEB_SEARCH_BASE_URL || 'http://127.0.0.1:8080',
+      timeoutMs: Number(process.env.WEB_SEARCH_TIMEOUT_MS) || 10000,
+      maxResults: Number(process.env.WEB_SEARCH_MAX_RESULTS) || 5,
+    },
   };
 }
 

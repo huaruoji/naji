@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 
 import { SocialAgent } from '../agent.js';
 import { ConversationManager } from '../conversation.js';
@@ -20,10 +20,20 @@ function createConfig(): AgentConfig {
     watchedFriends: ['2532452182'],
     explicitPromptCache: true,
     ownerQQ: '2532452182',
+    webSearch: {
+      enabled: true,
+      baseUrl: 'http://127.0.0.1:8080',
+      timeoutMs: 1000,
+      maxResults: 3,
+    },
   };
 }
 
 describe('SocialAgent reply policy', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('marks private messages as must_reply', () => {
     const agent = new SocialAgent(createConfig()) as any;
     const conv = new ConversationManager('system');
@@ -81,7 +91,7 @@ describe('SocialAgent reply policy', () => {
     expect(policy).toEqual({ kind: 'may_silent', reason: '普通群聊场景，可由模型判断是否回复' });
   });
 
-  it('rejects silent in must_reply scenarios', async () => {
+  it('removes silent tool in must_reply scenarios', () => {
     const agent = new SocialAgent(createConfig()) as any;
     const tools = agent.buildBuiltinTools(
       '2532452182',
@@ -90,6 +100,71 @@ describe('SocialAgent reply policy', () => {
       { kind: 'must_reply', reason: '这是私聊消息' },
     ) as Map<string, (args: Record<string, unknown>) => Promise<string>>;
 
-    await expect(tools.get('silent')!({})).resolves.toContain('当前场景必须回复');
+    expect(tools.has('silent')).toBe(false);
+  });
+
+  it('rejects stale reply_to outside the current buffer', async () => {
+    const agent = new SocialAgent(createConfig()) as any;
+    const tools = agent.buildBuiltinTools(
+      '699242647',
+      'group',
+      ['123'],
+      { kind: 'may_silent', reason: '普通群聊场景，可由模型判断是否回复' },
+    ) as Map<string, (args: Record<string, unknown>) => Promise<string>>;
+
+    await expect(tools.get('reply')!({ content: '收到', reply_to: '999' })).resolves.toContain('reply_to 无效');
+  });
+
+  it('formats local web search results for the model', async () => {
+    const agent = new SocialAgent(createConfig()) as any;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [
+          {
+            title: 'SearXNG',
+            url: 'https://docs.searxng.org/',
+            content: 'Privacy-respecting metasearch engine documentation.',
+            engine: 'wikipedia',
+          },
+        ],
+      }),
+    }));
+
+    const tools = agent.buildBuiltinTools(
+      '699242647',
+      'group',
+      ['123'],
+      { kind: 'may_silent', reason: '普通群聊场景，可由模型判断是否回复' },
+    ) as Map<string, (args: Record<string, unknown>) => Promise<string>>;
+
+    const result = await tools.get('web_search')!({ query: 'searxng', num_results: 2 });
+    expect(result).toContain('1. SearXNG [wikipedia]');
+    expect(result).toContain('URL: https://docs.searxng.org/');
+    expect(result).toContain('摘要: Privacy-respecting metasearch engine documentation.');
+  });
+
+  it('falls back to local fetch when Jina Reader fails', async () => {
+    const agent = new SocialAgent(createConfig()) as any;
+    let callCount = 0;
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => {
+      callCount++;
+      if (url.startsWith('https://r.jina.ai/')) {
+        return { ok: false };
+      }
+      return {
+        ok: true,
+        text: async () => '<html><body><p>Hello from local fallback</p></body></html>',
+      };
+    }));
+
+    const tools = agent.buildBuiltinTools(
+      '699242647', 'group', ['123'],
+      { kind: 'may_silent', reason: 'test' },
+    ) as Map<string, (args: Record<string, unknown>) => Promise<string>>;
+
+    const result = await tools.get('web_fetch')!({ url: 'https://example.com' });
+    expect(result).toContain('Hello from local fallback');
+    expect(callCount).toBeGreaterThanOrEqual(2);
   });
 });
